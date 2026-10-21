@@ -23,6 +23,26 @@ module.exports = {
     {
       method: "shell.run",
       params: {
+        path: ".",
+        message: [
+          "node check_compat.js"
+        ]
+      }
+    },
+    {
+      method: "shell.run",
+      params: {
+        venv: "env",
+        venv_python: "3.11",
+        path: "app/ACE-Step-1.5",
+        message: [
+          "uv pip install -e ."
+        ]
+      }
+    },
+    {
+      method: "shell.run",
+      params: {
         path: "app",
         message: [
           "npm install",
