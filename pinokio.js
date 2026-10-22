@@ -9,7 +9,8 @@ module.exports = {
       install: info.running("install.js"),
       start: info.running("start.js"),
       update: info.running("update.js"),
-      reset: info.running("reset.js")
+      reset: info.running("reset.js"),
+      download: info.running("download_models.js")
     }
 
     if (running.install) {
@@ -63,6 +64,15 @@ module.exports = {
         }]
       }
 
+      if (running.download) {
+        return [{
+          default: true,
+          icon: "fa-solid fa-terminal",
+          text: "Downloading Models",
+          href: "download_models.js"
+        }]
+      }
+
       return [{
         default: true,
         icon: "fa-solid fa-power-off",
@@ -76,6 +86,10 @@ module.exports = {
         icon: "fa-solid fa-plug",
         text: "Install",
         href: "install.js"
+      }, {
+        icon: "fa-solid fa-download",
+        text: "Download Models",
+        href: "download_models.js"
       }, {
         icon: "fa-regular fa-circle-xmark",
         text: "Reset",

@@ -1,0 +1,33 @@
+ACE-Step UI (Pinokio launcher) — notice
+======================================
+
+This repository is a mirror of the Pinokio launcher maintained by cocktailpeanut:
+
+    https://github.com/cocktailpeanut/ace-step-ui.pinokio
+
+The launcher files (`install.js`, `start.js`, `update.js`, `reset.js`,
+`pinokio.js`, `pinokio.json`, `icon.jpeg`) originate from that project.
+
+Upstream licensing
+------------------
+The upstream launcher ships **no `LICENSE` file**, so its code has not been
+published under an open-source license. This notice grants no license over
+the upstream files, and this repository makes no licensing claim about them.
+Redistributing them may require the upstream author's permission.
+
+The projects this launcher installs carry their own terms:
+
+  - ACE-Step 1.5 (`ace-step/ACE-Step-1.5`) — MIT
+  - ACE-Step UI (`fspecii/ace-step-ui`) — the repository ships no `LICENSE`
+    file; its README states MIT
+
+Changes made in this fork
+-------------------------
+The changes in this fork are local fixes to the launcher, listed in the
+README under "What changed in this fork". They are contributed back to the
+upstream project in the hope of being merged there; until then, this fork
+carries them.
+
+Adding a `LICENSE` file to this repository is deliberately **not** done
+here: choosing a license for code whose upstream terms are undefined is a
+decision for the repository owner, not a mechanical fix.

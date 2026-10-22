@@ -1,0 +1,71 @@
+name: launcher-checks
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: launcher checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax check every launcher script
+        run: |
+          set -euo pipefail
+          for f in *.js; do
+            node --check "$f"
+            echo "ok  $f"
+          done
+
+      - name: Smoke test - every script loads and the menu renders
+        run: |
+          set -euo pipefail
+          node -e '
+            const assert = require("assert")
+            for (const f of ["install", "start", "update", "reset", "pinokio", "download_models"]) {
+              require("./" + f + ".js")
+            }
+            const menu = require("./pinokio.js").menu
+            const info = { exists: () => true, running: () => false, local: () => undefined }
+            ;(async () => {
+              const items = await menu({}, info)
+              assert.ok(Array.isArray(items) && items.length > 0, "menu must return items")
+              assert.ok(items.some((i) => i.text === "Download Models"), "menu must expose Download Models")
+              console.log("menu:", items.map((i) => i.text).join(" | "))
+            })().catch((e) => { console.error(e); process.exit(1) })
+          '
+
+      - name: Port pre-flight on a free port
+        run: node check_port.js 3001
+
+      - name: Clone the upstreams the launcher depends on
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/fspecii/ace-step-ui app
+          git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5 app/ACE-Step-1.5
+
+      - name: Contract check against the latest upstreams
+        run: node check_compat.js app
+
+      - name: The launcher must not pin the engine's dependencies
+        run: |
+          set -euo pipefail
+          if grep -rnEi "torchao\s*<\s*0" --include="*.js" .; then
+            echo "::error::the launcher must not pin torchao - the engine declares its own range"
+            exit 1
+          fi
+          echo "ok  no manual dependency pins"

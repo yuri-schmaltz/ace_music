@@ -1,5 +1,7 @@
 # ACE-Step UI — Pinokio Launcher
 
+[![launcher checks](https://github.com/yuri-schmaltz/ace_music/actions/workflows/ci.yml/badge.svg)](https://github.com/yuri-schmaltz/ace_music/actions/workflows/ci.yml)
+
 A [Pinokio](https://pinokio.computer) launcher for [ACE-Step UI](https://github.com/fspecii/ace-step-ui), the local-first web interface for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5) music generation.
 
 The launcher clones both upstream projects into `app/`, installs them, and then starts three processes: the **ACE-Step engine** (Gradio + REST API), the **UI backend** (Express + SQLite) and the **built frontend** (Vite preview server).
@@ -9,7 +11,9 @@ The launcher clones both upstream projects into `app/`, installs them, and then 
 >
 > It mirrors <https://github.com/cocktailpeanut/ace-step-ui.pinokio>. On **2026-10-21** the two repositories had **identical file trees and identical commit history**, both at `96d4993`.
 >
-> The changes in this repository are **not** upstream and have **not** been pushed back. Before integrating an upstream commit, read [Syncing with upstream](#syncing-with-upstream) — the local fixes touch the same files upstream keeps changing, so a blind merge is not safe.
+> The changes in this repository are **not** upstream and have **not** been pushed back. Before integrating an upstream commit, read [Syncing with upstream](#syncing-with-upstream) — the local fixes touch the same files upstream keeps changing, so a blind merge is not safe. That section also lists **every file** this fork changed.
+>
+> The upstream ships no `LICENSE` file. This repository therefore grants no license over the upstream files either — see [`NOTICE`](NOTICE).
 
 ---
 
@@ -22,10 +26,11 @@ The launcher clones both upstream projects into `app/`, installs them, and then 
 5. [Configuration](#configuration)
 6. [First start: the model download](#first-start-the-model-download)
 7. [Contract checks](#contract-checks)
-8. [Local API](#local-api)
-9. [Known limits and open items](#known-limits-and-open-items)
-10. [Reference commits](#reference-commits)
-11. [Syncing with upstream](#syncing-with-upstream)
+8. [Continuous integration](#continuous-integration)
+9. [Local API](#local-api)
+10. [Known limits and open items](#known-limits-and-open-items)
+11. [Reference commits](#reference-commits)
+12. [Syncing with upstream](#syncing-with-upstream)
 
 ---
 
@@ -53,6 +58,8 @@ The launcher clones both upstream projects into `app/`, installs them, and then 
 
 **Update** (`update.js`) pulls the launcher, `app/` and `app/ACE-Step-1.5`, re-runs `node check_compat.js`, re-installs the engine into the virtualenv (`uv pip install -e .`) and rebuilds both npm packages.
 
+**Download Models** (`download_models.js`, optional) runs the engine's `acestep-download` inside the same virtualenv, with `ACESTEP_PROJECT_ROOT` pinned to `app/ACE-Step-1.5`, so the checkpoints are fetched into the linked `checkpoints` folder before the first start.
+
 **Reset** (`reset.js`) deletes the `app/` directory.
 
 ---
@@ -76,7 +83,9 @@ The launcher clones both upstream projects into `app/`, installs them, and then 
 2. Click **Start**. **The first start is slow — see [First start](#first-start-the-model-download).** The Pinokio window may look frozen while the model is downloaded.
 3. When the launcher prints the frontend URL, open it with the **Open Web UI** button in the Pinokio menu.
 
-The Pinokio menu offers **Start**, **Update**, **Install** and **Reset**; while the app is running it shows **Open Web UI** and **Terminal**.
+The Pinokio menu offers **Start**, **Update**, **Install**, **Download Models** and **Reset**; while the app is running it shows **Open Web UI** and **Terminal**.
+
+**Download Models** (optional) fetches the checkpoints up front, so that the first **Start** only has to load the model instead of downloading it while the launcher waits. It calls the engine's own `acestep-download` entry point with `ACESTEP_PROJECT_ROOT` pinned to `app/ACE-Step-1.5`, so the files land in the same linked `checkpoints` folder the engine would use anyway. Use it when you know the first start will be on a slow link; it is not required.
 
 ---
 
@@ -153,6 +162,8 @@ The download happens **inside the engine process, during the first Start**:
 
 Consequences: **the first Start can take a long time** — the checkpoints are a multi-GB download plus the model initialization — and the Pinokio window looks stuck. This is expected: watch the **Terminal** tab for the download progress. Subsequent starts reuse the downloaded checkpoints and are much faster.
 
+**Doing the download ahead of time.** The **Download Models** entry of the Pinokio menu runs the engine's own `acestep-download` command (`download_models.js`) in the engine's virtualenv, with `ACESTEP_PROJECT_ROOT` pinned to `app/ACE-Step-1.5` so the files land in the linked `checkpoints` folder. The default is the main model (including the 1.7B LM); the engine's own CLI also accepts `--all`, `--model <name>`, `--list` and `--dir <path>` if you want a different set — run it by hand inside `app/ACE-Step-1.5` with the virtualenv activated.
+
 ---
 
 ## Contract checks
@@ -176,6 +187,22 @@ Runs during **Install** (right after the two clones, before any npm/torch downlo
 ### `node check_port.js [PORT]`
 
 The pre-flight of the fixed backend port. `PORT` is optional and defaults to `3001`. It binds `0.0.0.0:PORT` to test availability — the same address the backend uses — and exits `0` when the port is free, `1` when it is busy, with a message naming the port and telling you how to release it (`lsof -i :3001` / `netstat -ano | findstr :3001`). It runs as the **first** step of `start.js`, before the engine (the most expensive step) is launched.
+
+---
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and on every pull request, and does exactly what a developer can do by hand:
+
+| Step | What it proves |
+|---|---|
+| `node --check` on every `.js` | no launcher script has a syntax error |
+| smoke test | every script loads, and the Pinokio menu renders the expected entries (including **Download Models**) |
+| `node check_port.js 3001` | the port pre-flight passes on a free port |
+| clone both upstreams and run `node check_compat.js app` | the **latest** upstream still matches the contract the launcher expects |
+| grep for manual `torchao` pins | the launcher never overrides the engine's own dependency range |
+
+The contract step clones the current `main` of both upstreams on every run, so an upstream change that breaks the launcher fails the build instead of failing on a user's machine. The workflow needs no secrets and no GPU.
 
 ---
 
@@ -295,12 +322,12 @@ curl -s http://127.0.0.1:3001/health
 |---|---|---|
 | **Fixed backend port** | The backend always listens on `3001` (see [why](#why-the-backend-port-is-fixed-at-3001)). Two apps running side by side will collide. | `node check_port.js 3001` fails the start with an actionable message instead of a half-started stack. **Not fixed.** |
 | **Upstreams are not version-pinned** | Install clones the default branch of `fspecii/ace-step-ui` and `ace-step/ACE-Step-1.5` — no tag, no SHA. The engine's HEAD (`ca1e85f`, 2026-08-29) is already 43 days newer than the launcher's last upstream commit (2026-07-17), so a fresh install can get a different code base than the one this launcher was verified against. | The contract checker (`check_compat.js`) fails early when the upstream breaks the expected surface. This is a *detection* mitigation, not a pin. Pinning by SHA was rejected: the UI has no tag and no release, and the engine's tags (`v0.1.0`…`v0.1.8`) do not track its `1.5.0` version, so a tag pin would select the wrong code. **Open.** |
-| **No CI and no automated tests** | The launcher has no test suite and no CI workflow. `check_compat.js` and `check_port.js` are the only executable checks, and they run **automatically** during Install, Update and Start (see [Contract checks](#contract-checks)); what is missing is a CI workflow and a unit-test suite. | **Open.** |
-| **No LICENSE file** | Neither this launcher nor the upstream launcher ships a `LICENSE` file, so the terms for the launcher itself are undefined. The engine is MIT (`license = {text = "MIT"}` in its `pyproject.toml`); the UI's README states MIT as well, but its repository also contains no `LICENSE` file. | **Open — pending a decision. No `LICENSE` file has been added.** |
+| **No unit-test suite** | There is no test suite for the launcher itself. The only executable checks are `check_compat.js` and `check_port.js`, and they run **automatically** during Install, Update and Start (see [Contract checks](#contract-checks)) and in CI (see [Continuous integration](#continuous-integration)). | **Partially mitigated.** The contract is verified against the latest upstream on every push; the launcher scripts themselves are only syntax-checked and smoke-tested. |
+| **No LICENSE file** | Neither this launcher nor the upstream launcher ships a `LICENSE` file, so the terms for the launcher itself are undefined. The engine is MIT (`license = {text = "MIT"}` in its `pyproject.toml`); the UI's README states MIT as well, but its repository also contains no `LICENSE` file. | **Open — pending a decision. No `LICENSE` file has been added.** The attribution and the reasoning behind not adding one are written up in [`NOTICE`](NOTICE). |
 | **Backend is reachable from the LAN** | The upstream server binds `0.0.0.0` (`server/src/index.ts:429`), so port `3001` is open to the local network. The frontend and the engine are bound to `127.0.0.1` only. | The backend is a single-user local app with a fixed `JWT_SECRET` (`ace-step-ui-local-secret`) and a token that expires after 365 days. Do not expose the port to an untrusted network. **Open.** |
 | **No `GEMINI_API_KEY`** | The launcher does not set it, and the upstream frontend bakes it in at build time (`vite.config.ts`). Without a key, the "generate title/lyrics" helper returns a hard-coded mock response instead of calling the API. | Optional feature, degrades gracefully. **Open.** |
 | **`AUDIO_DIR` is effectively decorative** | The current upstream server derives the audio folder from its own location (`app/server/public/audio`) and ignores `config.storage.audioDir` for the actual read/write path. The launcher passes a value that resolves to the same place. | Cosmetic only. **Open.** |
-| **The first start downloads the models** | The Install step does not fetch the checkpoints; the first Start does, inside the engine process. | Documented above. The engine ships an `acestep-download` console script (`acestep.model_downloader:main`) that can be used to pre-fetch the weights. **Open.** |
+| **The first start downloads the models** | The Install step does not fetch the checkpoints; the first Start does, inside the engine process. | **Mitigated.** The **Download Models** menu entry (`download_models.js`) runs the engine's `acestep-download` console script (`acestep.model_downloader:main`) on demand, with `ACESTEP_PROJECT_ROOT` pinned to `app/ACE-Step-1.5`, so the download can be done before the first Start. |
 
 ---
 
@@ -325,16 +352,23 @@ git clone https://github.com/ace-step/ACE-Step-1.5.git /tmp/engine && git -C /tm
 
 ## Syncing with upstream
 
-The upstream repository is <https://github.com/cocktailpeanut/ace-step-ui.pinokio>. This repository does **not** have it configured as a remote, and `origin` points to the mirror itself. To see what upstream has changed:
+The upstream repository is <https://github.com/cocktailpeanut/ace-step-ui.pinokio>. `origin` points to this mirror; the upstream is configured as a **second remote** named `upstream` in the working clone:
+
+```bash
+git remote -v                                 # origin = this mirror, upstream = cocktailpeanut
+git fetch upstream
+git log --oneline HEAD..upstream/main         # commits upstream has that this repo does not
+git diff HEAD upstream/main -- install.js start.js update.js
+```
+
+If your clone does not have it yet:
 
 ```bash
 git remote add upstream https://github.com/cocktailpeanut/ace-step-ui.pinokio.git
 git fetch upstream
-git log --oneline HEAD..upstream/main      # commits upstream has that this repo does not
-git diff HEAD upstream/main -- install.js start.js update.js
 ```
 
-On 2026-10-21 both commands returned nothing, because the committed history of the mirror was still exactly `upstream/main` (`96d4993`).
+On 2026-10-22 the mirror was still exactly `upstream/main` (`96d4993`) plus the local fixes below — `git log HEAD..upstream/main` returned nothing.
 
 **Review before integrating.** The local fixes touch the same files upstream keeps changing:
 
@@ -342,6 +376,10 @@ On 2026-10-21 both commands returned nothing, because the committed history of t
 - `update.js` — `uv pip install -e .` was added, plus `check_compat.js`.
 - `start.js` — `NODE_ENV` changed to `development`, `PEXELS_API_KEY` added, and the `check_port.js` pre-flight added.
 - `check_compat.js`, `check_port.js` — new files.
+- `download_models.js` — new file (optional pre-download of the checkpoints).
+- `pinokio.js` — new **Download Models** entry in the menu.
+- `.github/workflows/ci.yml` — new file (the checks described above).
+- `NOTICE` — new file (attribution; no license is granted over the upstream files).
 
 A merge that reintroduces the old `torchao<0.16` pin, drops the `check_compat.js` step or resets `NODE_ENV` to `production` will silently undo the fixes. The contract checker catches the first one (`check_compat.js`, item 7); the other two are worth a manual look.
 
