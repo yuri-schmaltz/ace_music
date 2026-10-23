@@ -192,17 +192,36 @@ The pre-flight of the fixed backend port. `PORT` is optional and defaults to `30
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and on every pull request, and does exactly what a developer can do by hand:
+`.github/workflows/ci.yml` runs on every push and on every pull request. It calls the verification gate that lives in this repository:
 
-| Step | What it proves |
+```bash
+node tools/verify.js
+```
+
+`tools/verify.js` is the same tool a developer (or an agent) runs locally — the CI has no second, hidden copy of the rules. It clones the current `main` of both upstreams into a temporary directory and then checks:
+
+| Block | What it proves |
 |---|---|
-| `node --check` on every `.js` | no launcher script has a syntax error |
-| smoke test | every script loads, and the Pinokio menu renders the expected entries (including **Download Models**) |
-| `node check_port.js 3001` | the port pre-flight passes on a free port |
-| clone both upstreams and run `node check_compat.js app` | the **latest** upstream still matches the contract the launcher expects |
-| grep for manual `torchao` pins | the launcher never overrides the engine's own dependency range |
+| scope | no file outside the launcher's own file set was changed |
+| syntax | `node --check` on every `.js` |
+| contract (both sides) | `check_compat.js` passes 7/7 on the real layout **and fails** on a deliberately broken copy of it |
+| port (both sides) | `check_port.js` passes on a free port and fails on a busy one |
+| Pinokio flow | step order, `venv`, `{{port}}`/`{{local.*}}`, the three event regexes, the nine backend environment variables |
+| upstream contract | the engine flags, `API endpoints enabled`, `requires-python`, the `torchao` range, the server banner, the npm scripts and the Vite `/api` proxy |
+| no pins | no launcher script overrides the engine's own dependency range |
+| README truth | the factual claims in this file are re-derived from the upstreams (call-site count, line numbers, endpoints, …) |
+| artifacts | the menu, `download_models.js`, the CI, `NOTICE` and `HANDOFF.md` |
 
-The contract step clones the current `main` of both upstreams on every run, so an upstream change that breaks the launcher fails the build instead of failing on a user's machine. The workflow needs no secrets and no GPU.
+Because the contract block clones the latest upstream `main` on every run, an upstream change that breaks the launcher fails the build instead of failing on a user's machine. The workflow needs no secrets and no GPU.
+
+Run it locally before trusting any change:
+
+```bash
+git clone https://github.com/yuri-schmaltz/ace_music.git && cd ace_music
+node tools/verify.js
+```
+
+Options: `--root <dir>` to use an already cloned layout, `--base <ref>` to compare the changed files against a base, `--no-clone` to fail instead of cloning.
 
 ---
 
@@ -322,7 +341,7 @@ curl -s http://127.0.0.1:3001/health
 |---|---|---|
 | **Fixed backend port** | The backend always listens on `3001` (see [why](#why-the-backend-port-is-fixed-at-3001)). Two apps running side by side will collide. | `node check_port.js 3001` fails the start with an actionable message instead of a half-started stack. **Not fixed.** |
 | **Upstreams are not version-pinned** | Install clones the default branch of `fspecii/ace-step-ui` and `ace-step/ACE-Step-1.5` — no tag, no SHA. The engine's HEAD (`ca1e85f`, 2026-08-29) is already 43 days newer than the launcher's last upstream commit (2026-07-17), so a fresh install can get a different code base than the one this launcher was verified against. | The contract checker (`check_compat.js`) fails early when the upstream breaks the expected surface. This is a *detection* mitigation, not a pin. Pinning by SHA was rejected: the UI has no tag and no release, and the engine's tags (`v0.1.0`…`v0.1.8`) do not track its `1.5.0` version, so a tag pin would select the wrong code. **Open.** |
-| **No unit-test suite** | There is no test suite for the launcher itself. The only executable checks are `check_compat.js` and `check_port.js`, and they run **automatically** during Install, Update and Start (see [Contract checks](#contract-checks)) and in CI (see [Continuous integration](#continuous-integration)). | **Partially mitigated.** The contract is verified against the latest upstream on every push; the launcher scripts themselves are only syntax-checked and smoke-tested. |
+| **No unit-test suite** | There is no test suite for the launcher's own rules. The executable checks are `check_compat.js` and `check_port.js` (which run **automatically** during Install, Update and Start) and the verification gate `tools/verify.js` (which runs in CI). | **Partially mitigated.** The contract is verified against the latest upstream on every push and the whole launcher is checked end to end, but there are no unit tests pinning the behaviour of the individual scripts. |
 | **No LICENSE file** | Neither this launcher nor the upstream launcher ships a `LICENSE` file, so the terms for the launcher itself are undefined. The engine is MIT (`license = {text = "MIT"}` in its `pyproject.toml`); the UI's README states MIT as well, but its repository also contains no `LICENSE` file. | **Open — pending a decision. No `LICENSE` file has been added.** The attribution and the reasoning behind not adding one are written up in [`NOTICE`](NOTICE). |
 | **Backend is reachable from the LAN** | The upstream server binds `0.0.0.0` (`server/src/index.ts:429`), so port `3001` is open to the local network. The frontend and the engine are bound to `127.0.0.1` only. | The backend is a single-user local app with a fixed `JWT_SECRET` (`ace-step-ui-local-secret`) and a token that expires after 365 days. Do not expose the port to an untrusted network. **Open.** |
 | **No `GEMINI_API_KEY`** | The launcher does not set it, and the upstream frontend bakes it in at build time (`vite.config.ts`). Without a key, the "generate title/lyrics" helper returns a hard-coded mock response instead of calling the API. | Optional feature, degrades gracefully. **Open.** |
